@@ -16,7 +16,7 @@
 
 # English
 
-This directory is a fork of [VaraiTamas/yoRadio](https://github.com/VaraiTamas/yoRadio) (version 0.8.8)
+This project is a fork of [VaraiTamas/yoRadio](https://github.com/VaraiTamas/yoRadio) (version 0.8.8)
 adapted to the **Waveshare ESP32-S3-Touch-LCD-1.54** board (SKU 33868).
 The board pins and drivers come from the manufacturer's repository:
 [waveshareteam/ESP32-S3-Touch-LCD-1.54](https://github.com/waveshareteam/ESP32-S3-Touch-LCD-1.54).
@@ -232,7 +232,7 @@ Firmware: `.pio/build/esp32-s3-devkitc1-n16r8/firmware.bin`. Web image (`pio run
 
 # Polski
 
-Ten katalog to fork [VaraiTamas/yoRadio](https://github.com/VaraiTamas/yoRadio) (wersja 0.8.8)
+Ten projekt to fork [VaraiTamas/yoRadio](https://github.com/VaraiTamas/yoRadio) (wersja 0.8.8)
 przystosowany do płytki **Waveshare ESP32-S3-Touch-LCD-1.54** (SKU 33868).
 Piny i sterowniki płytki pochodzą z repozytorium producenta:
 [waveshareteam/ESP32-S3-Touch-LCD-1.54](https://github.com/waveshareteam/ESP32-S3-Touch-LCD-1.54).
