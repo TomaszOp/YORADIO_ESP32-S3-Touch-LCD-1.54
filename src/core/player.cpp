@@ -170,6 +170,23 @@ void Player::loop() {
   if (xQueueReceive(playerQueue, &requestP, isRunning() ? PL_QUEUE_TICKS : PL_QUEUE_TICKS_ST)) {
     switch (requestP.type) {
       case PR_STOP: _stop(); break;
+      case PR_SELECT:
+      {
+#ifdef USE_SD
+        // Karta: pozycja z listy przeglądanej. Folder albo ".." = tylko zmiana przeglądanego folderu.
+        // Plik = ten folder staje się folderem odtwarzania i gra wybrany plik.
+        if (config.getMode() == PM_SDCARD) {
+          uint16_t it = (uint16_t)abs(requestP.payload);
+          if (it == 0 || it > config.playlistLength()) break;
+          if (it < config.sdFirstFile) {
+            config.sdOpenFolder(it);
+            break;
+          }
+          config.sdAdoptBrowse();
+        }
+#endif
+      }
+        [[fallthrough]];
       case PR_PLAY:
       {
         // Szybkie przełączanie stacji: kolejne PR_PLAY czekają w kolejce, a każde connecttohost()
@@ -193,9 +210,8 @@ void Player::loop() {
 #endif
 
 #ifdef USE_SD
-        // Folder albo "..": zmiana folderu zamiast odtwarzania
-        if (config.getMode() == PM_SDCARD && st > 0 && st < config.sdFirstFile) {
-          config.sdOpenFolder(st);
+        // Karta: numer pozycji na liście folderu odtwarzania; tylko pliki
+        if (config.getMode() == PM_SDCARD && (st < config.sdPlayFirst || st > config.sdPlayLength())) {
           break;
         }
 #endif
@@ -433,13 +449,11 @@ void Player::prev() {
     if (lastStation <= 1) config.lastStation(config.playlistLength());
     else config.lastStation(lastStation - 1);
   } else {
-    // SD: tylko pliki bieżącego folderu (bez "..", podfolderów), po pierwszym ostatni
-    uint16_t first = config.sdFirstFile, len = config.playlistLength();
+    // SD: tylko pliki folderu odtwarzania (bez "..", podfolderów), po pierwszym ostatni.
+    // Przeglądanie innych folderów nie ma na to wpływu.
+    uint16_t first = config.sdPlayFirst, len = config.sdPlayLength();
     if (first > len) return;  // w folderze nie ma plików
-    if (config.sdNewFolder) {
-      config.sdNewFolder = false;
-      config.lastStation(config.sdStartItem());
-    } else if (!config.store.sdsnuffle) {
+    if (!config.store.sdsnuffle) {
       if (lastStation <= first || lastStation > len) config.lastStation(len);
       else config.lastStation(lastStation - 1);
     } else {
@@ -457,13 +471,10 @@ void Player::next() {
     if (lastStation >= config.playlistLength()) config.lastStation(1);
     else config.lastStation(lastStation + 1);
   } else {
-    // SD: tylko pliki bieżącego folderu, po ostatnim od początku folderu
-    uint16_t first = config.sdFirstFile, len = config.playlistLength();
+    // SD: tylko pliki folderu odtwarzania, po ostatnim od początku folderu
+    uint16_t first = config.sdPlayFirst, len = config.sdPlayLength();
     if (first > len) return;  // w folderze nie ma plików
-    if (config.sdNewFolder) {
-      config.sdNewFolder = false;
-      config.lastStation(config.sdStartItem());
-    } else if (!config.store.sdsnuffle) {
+    if (!config.store.sdsnuffle) {
       if (lastStation >= len || lastStation < first) config.lastStation(first);
       else config.lastStation(lastStation + 1);
     } else {

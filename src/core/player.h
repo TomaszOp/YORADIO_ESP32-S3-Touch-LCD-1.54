@@ -19,7 +19,8 @@ enum playerRequestType_e : uint8_t {
   PR_VUTONUS = 7,
   PR_BURL = 8,
   PR_TOGGLE = 9,
-  PR_URL = 10
+  PR_URL = 10,
+  PR_SELECT = 11  // wybór pozycji z listy (WWW, ekran): na karcie folder = przeglądanie, plik = odtwarzanie
 };
 struct playerRequestParams_t {
   playerRequestType_e type;

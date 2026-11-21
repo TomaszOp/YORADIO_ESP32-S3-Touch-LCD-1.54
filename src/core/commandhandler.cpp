@@ -74,7 +74,7 @@ bool CommandHandler::exec(const char* command, const char* value, uint8_t cid) {
         if (id < 1) { id = 1; }
         uint16_t cs = config.playlistLength();
         if (id > cs) { id = cs; }
-        player.sendCommand({PR_PLAY, id});
+        player.sendCommand({PR_SELECT, id});
         return true;
     }
     if (strEquals(command, "vol")) {

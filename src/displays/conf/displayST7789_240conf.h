@@ -55,6 +55,12 @@ const WidgetConfig dateConf       PROGMEM = { TFT_FRAMEWDT, 169, 1, WA_LEFT };
 const ProgressConfig bootPrgConf    PROGMEM = { 90, 14, 4 };
 const BitrateConfig fullbitrateConf PROGMEM = {{8, 114, 1, WA_LEFT}, 41 }; // left, top, fontsize, align, border size
 
+/* IKONA TRYBU RADIO / KARTA SD (na lewo od ikony WiFi) */
+#define MODEICON_ENABLED
+const WidgetConfig modeIconConf   PROGMEM = { 207, 214, 1, WA_LEFT }; /* lewy górny róg ikony 8x8 */
+#define MODEICON_TOUCH_X 190 /* stuknięcie w obszarze x >= 190 i y >= 200 przełącza tryb */
+#define MODEICON_TOUCH_Y 200
+
 /* BANDS  */
 #ifdef BOOMBOX_STYLE
 const WidgetConfig  vuConf        PROGMEM = { 20, 190, 1, WA_CENTER };

@@ -294,6 +294,18 @@ class BitrateWidget : public Widget {
     void          _charSize(uint8_t textsize, uint8_t& width, uint16_t& height);
 };
 
+/* Ikona aktualnego trybu odtwarzania: antena = radio, karta = SD */
+class ModeIconWidget : public Widget {
+  public:
+    ModeIconWidget(WidgetConfig conf, uint16_t fgcolor, uint16_t bgcolor) { init(conf, fgcolor, bgcolor); }
+    void setMode(uint8_t mode);
+
+  protected:
+    uint8_t _pmode = 255;
+    void    _draw();
+    void    _clear();
+};
+
 class PlayListWidget : public Widget {
   public:
     using Widget::init;

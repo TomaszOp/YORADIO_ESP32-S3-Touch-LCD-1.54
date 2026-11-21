@@ -1,11 +1,242 @@
-# yoRadio na Waveshare ESP32-S3-Touch-LCD-1.54
+# yoRadio on Waveshare ESP32-S3-Touch-LCD-1.54
+
+<p align="center">Radio</p>
+<p align="center">
+  <img src="doc/images/33868_1.jpg" alt="LCD Radio" width="300">
+  <img src="doc/images/www_1.jpg" alt="Interfejs WWW" width="300">
+</p>
+<p align="center">Player SD</p>
+<p align="center">
+  <img src="doc/images/33868_2.jpg" alt="LCD SD" width="300">
+  <img src="doc/images/www_2.jpg" alt="Interfejs WWW" width="300">
+</p>
+
+
+**[English](#english) | [Polski](#polski)**
+
+# English
+
+This directory is a fork of [VaraiTamas/yoRadio](https://github.com/VaraiTamas/yoRadio) (version 0.8.8)
+adapted to the **Waveshare ESP32-S3-Touch-LCD-1.54** board (SKU 33868).
+The board pins and drivers come from the manufacturer's repository:
+[waveshareteam/ESP32-S3-Touch-LCD-1.54](https://github.com/waveshareteam/ESP32-S3-Touch-LCD-1.54).
+
+
+## Hardware
+
+| Component | Chip | Pins |
+|---|---|---|
+| 1.54" 240x240 display | ST7789 (SPI) | SCK 38, MOSI 39, DC 45, CS 21, RST 40, backlight 46 |
+| Touch | CST816 (I2C 0x15) | SDA 42, SCL 41, INT 48, RST 47 |
+| Audio codec | ES8311 (I2C 0x18) | SDA 42, SCL 41 (I2C bus shared with touch), MCLK 8, BCLK 9, LRC 10, DOUT 12 |
+| Amplifier | PA_CTRL | GPIO 7 |
+| Battery power hold | | GPIO 2 (HIGH) |
+| Case buttons | | left GPIO 0 (BOOT), middle GPIO 5 (PWR), right GPIO 4 |
+| microSD card | SDMMC 4-bit (SD_MMC) | CLK 16, CMD 15, D0 17, D1 18, D2 13, D3 14 |
+
+Module: ESP32-S3, 16 MB flash, 8 MB PSRAM (OPI). It matches the `esp32-s3-devkitc1-n16r8` environment
+in `platformio.ini`.
+
+The board also has a QMI8658 sensor and battery measurement (ADC GPIO 1, charging GPIO 3). yoRadio does not use them.
+
+## What was changed
+
+All board-related changes are enabled by a single switch in `myoptions.h`:
+
+```c
+#define BOARD_WS_S3_TOUCH_LCD_154
+```
+
+### `myoptions.h`
+- Set the board, the `DSP_ST7789_240` display (instead of the `DSP_SSD1322` OLED) and the display, touch and I2S pins
+  from the table above.
+- Added `I2S_MCLK 8`, because the ES8311 codec needs an MCLK clock from the ESP32.
+- `MUTE_PIN 7` / `MUTE_VAL LOW` turns the amplifier on during playback and off after stopping.
+- Buttons arranged to match the case: `BTN_LEFT 0`, `BTN_CENTER 5`, `BTN_RIGHT 4`.
+- Both encoders disabled, because their pins conflicted with the board.
+- `ENCODERS_INDEPENDENT` commented out. This option blocked switching the station list by holding a button.
+- Interface language, name days and time announcements changed from HU to PL.
+- microSD card enabled: `SDC_CS 14` and `SD_SDMMC_PINS 16, 15, 17, 18, 13, 14` (CLK, CMD, D0, D1, D2, D3, following
+  the Waveshare `07_sd_card_test` example). The slot is wired to the native SDMMC interface, so the card works through
+  the SD_MMC library in 4-bit mode. If that fails, the program tries 1-bit mode. `SDC_CS` is only used here to
+  enable card support. The first version used SPI mode (`SD_SPIPINS`), but the card initialised with errors
+  (`APP_OP_COND failed`, `f_mount failed`) and the radio froze after switching to the card. Because the radio remembers
+  the selected mode, it then froze on every boot until the card was removed.
+- `src/core/sdmanager.h`, `src/core/sdmanager.cpp`: when `SD_SDMMC_PINS` is defined, `SDManager` inherits from
+  `fs::SDMMCFS` (SD_MMC) instead of `fs::SDFS` (SD over SPI), and `start()` sets the pins and mounts the card through SD_MMC
+  (20 MHz). Without this option it works as before over SPI.
+
+### Board initialisation: `src/boards/ws_s3_lcd154/` (new directory)
+- `ws_s3_lcd154.cpp` implements `yoradio_on_setup()`, called at the start of `setup()`. The function:
+  - sets GPIO 2 high (battery power hold; has no effect when powered from USB),
+  - starts I2C on pins 42/41,
+  - starts the display SPI on pins 38/39 before the Adafruit library does,
+  - initialises the ES8311 codec: MCLK from the pin at a 256x ratio, 16-bit I2S, hardware volume 85 %
+    (`WS154_CODEC_VOLUME`), microphone off.
+- `es8311.cpp/.h`, `es8311_reg.h` are the Espressif ES8311 driver (Apache-2.0), copied from the Waveshare examples.
+  In the header `driver/i2c.h` was replaced with `hal/i2c_types.h`.
+
+### ST7789 240x240 display
+- `src/displays/dspcore.h` got a new branch for `DSP_ST7789_240`. This fork previously supported only the 320x240 ST7789.
+- `src/displays/displayST7789.h` includes the 240x240 configuration.
+- `src/displays/conf/displayST7789_240conf.h` (new file) is the screen layout for 240x240. It is based on
+  `displayST7789conf.h` from the fork and `displayST7789_240conf.h` from [e2002/yoradio](https://github.com/e2002/yoradio).
+- `src/displays/displayST7789.cpp`:
+  - on this board colours are inverted by default, as in `DSP_ST7789_170`, so that they display correctly;
+  - the screen is rotated 180° by default to match its position in the case. The "flip screen" option in the web settings
+    restores 0° orientation.
+  - The image offset in ST7789 memory stays at the Adafruit library default. A different setting shifted the image
+    by 80 px.
+- `platformio.ini`: added the `adafruit/Adafruit ST7735 and ST7789 Library` library.
+- Polish characters on screen: `copy_glcdfont.py` (in `platformio.ini` as `extra_scripts = pre:...`) copies the 5x7
+  font from `locale/glcdfont/PL, SK, DE, RO, S, A/glcdfont.c` into the Adafruit GFX library in `.pio/libdeps` before
+  every build. `utf8Pol.cpp` maps ą, ę, ł etc. to characters of this font, and the stock GFX font showed other symbols
+  in their place. The original yoRadio says to copy this file by hand, and the copy disappears when the libraries are
+  reinstalled.
+- Station name without Polish diacritics while playing: many stations send the name without Polish letters in the
+  stream metadata (`icy-name`, `StreamTitle`), e.g. "Radio PLONSK 93,6 FM", although the playlist says "Radio Płońsk".
+  After STOP the screen went back to the playlist name, which is why the diacritics were visible then.
+  `Config::setTitle()` and `Config::setStation()` in `src/core/config.cpp` now check whether the stream text starts
+  with the playlist name written without diacritics (case-insensitive). If it does, that beginning is replaced with the
+  playlist name and the rest is kept: "Radio Płońsk 93,6 FM". Other stream texts (e.g. a station description without
+  diacritics) cannot be corrected.
+
+### CST816 touch
+- `src/core/options.h`: new constant `TS_MODEL_CST816 4`.
+- `src/core/touchscreen.cpp` has a new driver. After reset (pin 47) it disables the chip's auto-sleep and every 20 ms
+  reads registers 0x02–0x06 (finger count, X, Y). Coordinates rotate together with the screen, so touch is also
+  rotated 180° by default. The "flip touch" option restores it.
+- `src/core/config.cpp`: for CST816, I2C is initialised and the bus is scanned. The boot log shows the addresses
+  found, e.g. 0x15 and 0x18.
+
+### Audio
+- `src/core/options.h`: new option `I2S_MCLK` (default -1, unused).
+- `src/core/player.cpp` passes `I2S_MCLK` to `setPinout()`. The audio library generates MCLK = 256 x fs.
+
+### Web page
+- `data/www/style.css.gz`: on a phone (width up to 480 px) the station list in the player has a fixed height
+  (60 % of the screen, min. 260 px), and the whole page scrolls. Previously the list only got the remaining space
+  and shrank, even to a single item, when the song title wrapped to another line.
+- `data/www/player.html.gz`: the gap below the station search field reduced from 90 px to 8 px. The genre drop-down
+  is shown over the station list, so it does not need reserved space.
+- `data/www/script.js.gz`: when no station in `playlist.csv` has a genre (4th column), the genre drop-down is
+  hidden, and the field's label and hint only mention searching by name. After genres are added the filter
+  comes back automatically.
+
+- `data/www/style.css.gz`: long names without spaces (e.g. a stream URL instead of a station name) wrap to the next
+  line. Previously they stretched the page on a phone to about 800 px width, so the whole page was scaled down
+  and the icons changed size. On touch screens buttons no longer stay highlighted after a tap.
+- `data/www/style.css.gz`: on a phone (up to 480 px) the player's side margins reduced from 40 px to 16 px
+  on each side, so the buttons and the station list are wider. The minimum page width reduced from 333 px to
+  300 px, so on 320 px screens the page no longer scrolls sideways. The search field uses a 16 px font, and the
+  genre drop-down is taller (up to half the screen instead of 80 px, i.e. about two items) and has larger
+  tap targets.
+- `data/www/style.css.gz`: on a phone (up to 600 px) the playlist editor opens full screen, and each station is
+  a card: number, checkbox, name and preview in the first row, URL in the second, volume and genre in the third.
+  Previously the editor was an 880 px wide table, scrolled sideways, with a hidden close button. The
+  Import/Export/Add/Remove/Save buttons wrap to the next row.
+- `data/www/player.html.gz`, `data/www/script.js.gz`: shorter hint in the search field ("Station name or
+  genre"), because the longer one was cut off on a phone. After choosing a genre from the list its name appears in the
+  field as a hint, so you can see which filter is active.
+- `data/www/script.js.gz`: switching between radio and SD card works without reloading the page. After clicking the card
+  icon the globe icon (back to radio) appears right away, whereas previously the same icon came back. When the
+  connection to the page drops during a mode change, the page fetches the current state and list by itself after
+  reconnecting.
+- `data/www/script.js.gz`: the station list no longer disappears when changing stations. When the radio is busy
+  (connecting to a station or reading the card) and fetching the list fails, the page keeps the previous list and
+  retries every 2 s (up to 5 times). Previously the list stayed empty until the page was reloaded. The list is fetched
+  again only after a radio/SD mode change, not on every reconnect.
+
+### Player
+- `src/core/player.cpp`: when switching through several stations quickly, the player connects only to the last one
+  selected. Previously every station-change command waited in a queue and the radio connected to each station in turn
+  (up to about 6 s each), which could mean up to a minute of silence.
+- `src/audioI2S/audiolib_structs.hpp`: I2S DMA buffer increased from 16x192 to 16x512 frames (~185 ms instead of ~70 ms
+  of audio). This is meant to reduce audio dropouts when opening web pages (e.g. options), when reading files from SPIFFS
+  briefly stalls the decoder loop.
+- `src/core/config.cpp` (`initPlaylistMode`): when the radio boots in SD card mode and there is no card, it falls back
+  to internet radio and loads the station list normally. Previously the function returned before setting `_bootDone`,
+  so until the next restart every switch to the card only changed the mode. The card was then not indexed
+  (empty list, "SD indexing" screen), and the page did not receive the new state.
+- The SD card is browsed by folder (`src/core/sdmanager.cpp`, `config.cpp/.h`, `player.cpp`, `controls.cpp`,
+  `options.h`). The list contains only the current folder: ".." at the top (go up, not shown in the root folder), then
+  subfolders as `[name]` and audio files, each group in alphabetical order. The program reads only the names in that one
+  folder, so the list loads immediately, even on a large card. Previously it scanned the whole card up to 3 levels
+  deep, which with many files took about a minute and blocked the radio and the page.
+  - Selecting a folder (on the page or with a button on the radio) loads its list and plays nothing. On the radio
+    screen the list stays open, with the cursor on the first file.
+  - Next, previous, automatic advance at the end of a track and shuffle work only on files in the current
+    folder. After the last file playback starts again from the first. If the folder was changed during playback, the
+    first file of the new folder plays after the current track.
+  - After entering card mode (also after a restart) the root folder always starts: `/music` (option `SD_SCAN_DIR`), or,
+    if it does not exist, the card's root folder. Hidden folders, `System Volume Information`, `/data` (where the radio
+    stores its list) and folders containing a `.nomedia` file are skipped.
+  - A file path can be at most 169 characters long (`BUFLEN`); the radio will not open a longer one.
+- `src/displays/widgets/widgets.cpp/.h`, `src/core/display.cpp`: the list on the radio screen is re-read every time
+  it is opened. With `PLAYLIST_SCROLL_MOVING_CURSOR` the widget remembered the list page and re-read it only
+  when the page changed, so after switching radio/SD or the card folder it showed radio stations or the previous folder.
+- `data/www/script.js.gz`, `data/www/style.css.gz`: in the SD card list folders have a folder icon and a bold name,
+  and ".." has an arrow icon. After a folder change the page loads the new list by itself.
+
+### Uploading over WiFi (OTA)
+Firmware and the file system can be uploaded wirelessly while the radio is on the network (`USE_OTA true` in `myoptions.h`):
+- **From PlatformIO:** `platformio.ini` has an `ota` environment (`upload_protocol = espota`). Put the radio's IP in
+  its `upload_port` and run `pio run -e ota -t upload` (firmware) or `pio run -e ota -t uploadfs` (file system).
+  In VS Code select the `env:ota` environment in the bottom bar and use the usual Upload / Upload Filesystem Image buttons.
+  The default environment (`default_envs`) still uploads over USB. If you set `OTA_PASS` in `myoptions.h`,
+  uncomment `upload_flags = --auth=...`.
+- **From the browser:** the radio's update page (form with a firmware / SPIFFS choice) accepts
+  `.pio/build/esp32-s3-devkitc1-n16r8/firmware.bin` or `spiffs.bin`.
+- `src/main.cpp`: SPIFFS is unmounted before a file system upload over ArduinoOTA.
+
+### Uploading
+- `platformio.ini`: `upload_speed = 460800`. At higher speeds uploading over native USB kept failing.
+- If uploading fails, force download mode: unplug USB, hold the left button (BOOT), plug USB in
+  and release the button.
+- The web file system (`data/`) can also be uploaded through the browser while the radio is on the network.
+
+> **Note:** on the ESP32-S3-Touch-LCD-1.54 unit used here, uploading the file system from PlatformIO
+> ("Upload Filesystem Image" / `pio run -t uploadfs`) did not work: it stopped with "The chip stopped responding".
+> The web page files were uploaded through the browser: after uploading just the firmware, open `http://<radio-IP>/`
+> and select the files from `data/www/` and `data/data/playlist.csv`.
+
+## Button controls
+
+| Button | Click | Hold | Double click |
+|---|---|---|---|
+| Left (GPIO 0) | volume down / up the list | volume down continuously / scroll | previous station |
+| Middle (GPIO 5) | start/stop, confirm station | opens and closes the station list | – |
+| Right (GPIO 4) | volume up / down the list | volume up continuously / scroll | next station |
+
+When the station list or the SD card's files and folders are on screen, the left and right buttons move the cursor up and down,
+holding scrolls the list, and the middle button selects the item. A double click on left or right then moves the cursor
+by two items, and on the volume screen changes the volume by two steps. Previously (`src/core/controls.cpp`, `onBtnDoubleClick`)
+it was ignored outside the player screen, so the cursor lost steps when pressing quickly.
+
+Touch: swiping left/right changes the volume, swiping up/down opens and scrolls the station list,
+a tap is start/stop or confirm.
+
+GPIO 5 is also the hardware power button. When running on battery, a long hold may
+turn the board off.
+
+## Build
+
+```bash
+pio run
+```
+
+Firmware: `.pio/build/esp32-s3-devkitc1-n16r8/firmware.bin`. Web image (`pio run -t buildfs`):
+`.pio/build/esp32-s3-devkitc1-n16r8/spiffs.bin`.
+
+---
+
+# Polski
 
 Ten katalog to fork [VaraiTamas/yoRadio](https://github.com/VaraiTamas/yoRadio) (wersja 0.8.8)
 przystosowany do płytki **Waveshare ESP32-S3-Touch-LCD-1.54** (SKU 33868).
 Piny i sterowniki płytki pochodzą z repozytorium producenta:
 [waveshareteam/ESP32-S3-Touch-LCD-1.54](https://github.com/waveshareteam/ESP32-S3-Touch-LCD-1.54).
 
-Kopia projektu sprzed zmian: `../YORADIO_1.54_kopia_20261119.tar.gz`.
 
 ## Sprzęt
 
@@ -13,16 +244,16 @@ Kopia projektu sprzed zmian: `../YORADIO_1.54_kopia_20261119.tar.gz`.
 |---|---|---|
 | Wyświetlacz 1,54" 240x240 | ST7789 (SPI) | SCK 38, MOSI 39, DC 45, CS 21, RST 40, podświetlenie 46 |
 | Dotyk | CST816 (I2C 0x15) | SDA 42, SCL 41, INT 48, RST 47 |
-| Kodek audio | ES8311 (I2C 0x18) | MCLK 8, BCLK 9, LRC 10, DOUT 12 |
+| Kodek audio | ES8311 (I2C 0x18) | SDA 42, SCL 41 (wspólna magistrala I2C z dotykiem), MCLK 8, BCLK 9, LRC 10, DOUT 12 |
 | Wzmacniacz | PA_CTRL | GPIO 7 |
 | Podtrzymanie zasilania z akumulatora | | GPIO 2 (HIGH) |
 | Przyciski na obudowie | | lewy GPIO 0 (BOOT), środkowy GPIO 5 (PWR), prawy GPIO 4 |
+| Karta microSD | SDMMC 4-bit (SD_MMC) | CLK 16, CMD 15, D0 17, D1 18, D2 13, D3 14 |
 
 Moduł: ESP32-S3, 16 MB flash, 8 MB PSRAM (OPI). Pasuje środowisko `esp32-s3-devkitc1-n16r8`
 z `platformio.ini`.
 
-Na płytce są też czujnik QMI8658, karta SD w trybie SDMMC (16/15/17/18/13/14) oraz pomiar baterii
-(ADC GPIO 1, ładowanie GPIO 3). yoRadio ich nie używa.
+Na płytce są też czujnik QMI8658 oraz pomiar baterii (ADC GPIO 1, ładowanie GPIO 3). yoRadio ich nie używa.
 
 ## Co zmieniono
 
@@ -79,10 +310,11 @@ Wszystkie zmiany związane z płytką są włączane jednym przełącznikiem w `
   w ich miejscu inne symbole. Oryginalny yoRadio każe skopiować ten plik ręcznie, a kopia znika przy ponownej
   instalacji bibliotek.
 - Nazwa stacji bez ogonków podczas grania: wiele stacji wysyła w metadanych strumienia (`icy-name`, `StreamTitle`)
-  nazwę bez polskich liter, np. „RADIO PLONSK”, choć w playliście jest „RADIO PŁOŃSK”. Po STOP ekran wracał do nazwy
-  z playlisty, dlatego wtedy ogonki były widoczne. `Config::setTitle()` i `Config::setStation()` w
-  `src/core/config.cpp` porównują teraz oba napisy bez ogonków i bez rozróżniania wielkości liter. Gdy to ta sama
-  nazwa, na ekranie i na stronie WWW zostaje wersja z playlisty.
+  nazwę bez polskich liter, np. „Radio PLONSK 93,6 FM”, choć w playliście jest „Radio Płońsk”. Po STOP ekran wracał
+  do nazwy z playlisty, dlatego wtedy ogonki były widoczne. `Config::setTitle()` i `Config::setStation()` w
+  `src/core/config.cpp` sprawdzają teraz, czy tekst ze strumienia zaczyna się od nazwy z playlisty zapisanej bez
+  ogonków (bez rozróżniania wielkości liter). Jeśli tak, ten początek jest zastępowany nazwą z playlisty, a reszta
+  zostaje: „Radio Płońsk 93,6 FM”. Innych tekstów ze strumienia (np. opisu stacji bez ogonków) nie da się poprawić.
 
 ### Dotyk CST816
 - `src/core/options.h`: nowa stała `TS_MODEL_CST816 4`.

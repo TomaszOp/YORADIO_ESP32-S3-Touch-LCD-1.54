@@ -18,6 +18,7 @@ class VuWidget;
 class NumWidget;
 class ClockWidget;
 class TextWidget;
+class ModeIconWidget;
     
 class Display {
   public:
@@ -61,6 +62,7 @@ class Display {
     ClockWidget *_clock;
     Page *_boot;
     TextWidget *_bootstring, *_volip, *_voltxt, *_rssi, *_bitrate, *_chtxt;
+    ModeIconWidget *_modeicon = nullptr;
     bool _locked = false;
     uint8_t _bootStep;
     void _time(bool redraw = false);

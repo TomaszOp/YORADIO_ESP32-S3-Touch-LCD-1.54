@@ -407,7 +407,7 @@ void irLoop() {
                             irBlink();
                             if (display.mode() == NUMBERS) {
                                 display.putRequest(NEWMODE, PLAYER);
-                                player.sendCommand({PR_PLAY, display.numOfNextStation});
+                                player.sendCommand({PR_SELECT, display.numOfNextStation});
                                 display.numOfNextStation = 0;
                                 break;
                             }
@@ -649,8 +649,8 @@ void onBtnClick(int id) {
                 display.putRequest(NEWMODE, PLAYER);
                 bool choose = config.lastStation() != display.currentPlItem;
 #ifdef USE_SD
-                // karta: folder otwieramy zawsze, a po zmianie folderu pierwszy plik też trzeba móc wybrać
-                if (config.getMode() == PM_SDCARD && (config.sdNewFolder || display.currentPlItem < config.sdFirstFile)) { choose = true; }
+                // karta: folder otwieramy zawsze; w innym folderze niż folder odtwarzania każdy plik też trzeba móc wybrać
+                if (config.getMode() == PM_SDCARD && (!config.sdBrowsingPlayFolder() || display.currentPlItem < config.sdFirstFile)) { choose = true; }
 #endif
                 if (choose) { display.putRequest(CLOSEPLAYLIST, display.currentPlItem); }
             }

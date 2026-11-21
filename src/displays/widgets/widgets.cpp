@@ -31,6 +31,27 @@ void FillWidget::setHeight(uint16_t newHeight) {
     _height = newHeight;
 }
 /************************
+      MODE ICON WIDGET
+ ************************/
+static const uint8_t modeIconRadio[8] PROGMEM = {0x02, 0x04, 0x08, 0xFF, 0xA9, 0xAB, 0xA9, 0xFF};
+static const uint8_t modeIconSD[8] PROGMEM = {0xFC, 0xAA, 0xA9, 0x81, 0x81, 0x81, 0x81, 0xFF};
+
+void ModeIconWidget::setMode(uint8_t mode) {
+    if (mode == _pmode) { return; }
+    _pmode = mode;
+    _draw();
+}
+
+void ModeIconWidget::_draw() {
+    if (!_active || _locked || _pmode == 255) { return; }
+    dsp.drawBitmap(_config.left, _config.top, _pmode == PM_SDCARD ? modeIconSD : modeIconRadio, 8, 8, _fgcolor, _bgcolor);
+}
+
+void ModeIconWidget::_clear() {
+    dsp.fillRect(_config.left, _config.top, 8, 8, _bgcolor);
+}
+
+/************************
       TEXT WIDGET
  ************************/
 TextWidget::~TextWidget() {

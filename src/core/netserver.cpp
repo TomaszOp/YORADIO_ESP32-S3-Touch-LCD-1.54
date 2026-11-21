@@ -572,7 +572,12 @@ void NetServer::processQueue() {
         requestOnChange(ITEM, clientId);
         break;
       case STATIONNAME: sprintf(wsBuf, "{\"payload\":[{\"id\":\"nameset\", \"value\": \"%s\"}]}", config.station.name); break;
-      case ITEM:        sprintf(wsBuf, "{\"current\": %d}", config.lastStation()); break;
+      case ITEM:
+#ifdef USE_SD
+        // karta: podświetlenie tylko w folderze odtwarzania
+        if (config.getMode() == PM_SDCARD && !config.sdBrowsingPlayFolder()) { sprintf(wsBuf, "{\"current\": 0}"); break; }
+#endif
+        sprintf(wsBuf, "{\"current\": %d}", config.lastStation()); break;
       case TITLE:
         sprintf(wsBuf, "{\"payload\":[{\"id\":\"meta\", \"value\": \"%s\"}]}", config.station.title);
         telnet.printf("##CLI.META#: %s\r\n> ", config.station.title);
@@ -764,7 +769,8 @@ void NetServer::onWsMessage(void *arg, uint8_t *data, size_t len, uint8_t client
         //mqttplaylistticker.attach(5, mqttplaylistSend);
         timekeeper.waitAndDo(5, mqttplaylistSend);
 #endif
-        if (player.isRunning()) {
+        // Karta SD: strona wczytała nową listę folderu; odtwarzanie ma własną listę, więc bez restartu utworu
+        if (player.isRunning() && config.getMode() != PM_SDCARD) {
           player.sendCommand({PR_PLAY, -config.lastStation()});
         }
         return;

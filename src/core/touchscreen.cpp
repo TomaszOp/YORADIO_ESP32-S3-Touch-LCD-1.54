@@ -6,6 +6,7 @@
     #include "controls.h"
     #include "display.h"
     #include "player.h"
+    #include "network.h"
     #include "presets.h"
     #include "../displays/dspcore.h" // DspCore + extern dsp
     #include "../plugins/backlight/backlight.h"
@@ -454,6 +455,13 @@ void TouchScreen::loop() {
                             }
                         }
                         // Serial.println("touchscreen.cpp--> NORMAL CLICK");
+    #if defined(MODEICON_ENABLED) && defined(USE_SD)
+                        // stuknięcie w prawy dolny róg (ikona trybu obok WiFi) przełącza radio <-> karta SD
+                        if (display.mode() == PLAYER && _oldTouchX >= MODEICON_TOUCH_X && _oldTouchY >= MODEICON_TOUCH_Y &&
+                            (network.status == CONNECTED || network.status == SDREADY)) {
+                            config.changeMode();
+                        } else
+    #endif
                         onBtnClick(EVT_BTNCENTER);
                     }
                 } else {

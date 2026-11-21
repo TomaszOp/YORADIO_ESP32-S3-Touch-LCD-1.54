@@ -21,6 +21,9 @@
 
 #define PLAYLIST_SD_PATH "/data/playlistsd.csv"
 #define INDEX_SD_PATH    "/data/indexsd.dat"
+// Karta SD: lista folderu, z którego się gra (next/prev/losowanie/koniec utworu). Lista powyżej to folder przeglądany.
+#define PLAYLIST_SDPLAY_PATH "/data/playlistsdplay.csv"
+#define INDEX_SDPLAY_PATH    "/data/indexsdplay.dat"
 #ifdef USE_DLNA                                          // DLNA mod
 #    define PLAYLIST_DLNA_PATH "/data/playlist_dlna.csv" // DLNA mod
 #    define INDEX_DLNA_PATH    "/data/indexdlna.dat"     // DLNA mod
@@ -286,12 +289,21 @@ class Config {
     void     initSDPlaylist();
 #ifdef USE_SD
     // Karta SD przeglądana folderami: lista to "..", podfoldery, a potem pliki bieżącego folderu
-    char        sdDir[BUFLEN];          // bieżący folder
-    uint16_t    sdFirstFile = 1;        // numer pierwszej pozycji listy, która jest plikiem
-    bool        sdNewFolder = false;    // zmieniono folder w trakcie grania: następny utwór = pierwszy plik
+    // Dwa foldery: przeglądany (sdDir, lista na ekranie i WWW) i odtwarzania (sdPlayDir, osobna lista).
+    // Wejście w folder zmienia tylko przeglądany; wybór pliku przenosi tam odtwarzanie.
+    char        sdDir[BUFLEN];          // folder przeglądany
+    uint16_t    sdFirstFile = 1;        // numer pierwszej pozycji listy przeglądanej, która jest plikiem
+    char        sdPlayDir[BUFLEN];      // folder odtwarzania
+    uint16_t    sdPlayFirst = 1;        // numer pierwszej pozycji listy odtwarzania, która jest plikiem
+    bool        sdKeepBrowse = false;   // lista na ekranie otwierana po zmianie folderu: nie wracaj do folderu odtwarzania
     const char* sdRootDir();            // SD_SCAN_DIR, gdy istnieje, w przeciwnym razie "/"
     void        sdOpenFolder(uint16_t item);
     uint16_t    sdStartItem();
+    uint16_t    sdPlayLength();         // długość listy odtwarzania
+    bool        sdBrowsingPlayFolder() { return strcmp(sdDir, sdPlayDir) == 0; }
+    void        sdAdoptBrowse(bool force = false); // folder przeglądany staje się folderem odtwarzania
+    void        sdShowPlayFolder();     // folder przeglądany wraca do folderu odtwarzania
+    uint16_t    sdCursorItem();         // pozycja kursora / podświetlenia na liście przeglądanej (0 = brak)
 #endif
     void     changeMode(int newmode = -1);
     uint16_t playlistLength();

@@ -258,9 +258,11 @@ void Config::changeMode(int newmode) { // DLNA mod
         uint16_t st = (getMode() == PM_SDCARD) ? store.lastSdStation : (store.playlistSource == PL_SRC_DLNA ? store.lastDlnaStation : store.lastStation);
 #    else
         uint16_t st = (getMode() == PM_SDCARD) ? store.lastSdStation : store.lastStation;
-        player.sendCommand({PR_PLAY, st});
+        if (getMode() != PM_SDCARD) { player.sendCommand({PR_PLAY, st}); }
 #    endif
     }
+    // Radio -> karta: zawsze start pierwszego (albo losowego) pliku z /music, gdy w nim są pliki
+    if (getMode() == PM_SDCARD && store.lastSdStation > 0) { player.sendCommand({PR_PLAY, store.lastSdStation}); }
 
     netserver.resetQueue();
     netserver.requestOnChange(GETINDEX, 0);
@@ -268,6 +270,7 @@ void Config::changeMode(int newmode) { // DLNA mod
     display.resetQueue();
     display.putRequest(NEWMODE, PLAYER);
     display.putRequest(NEWSTATION);
+    display.putRequest(NEWMODE, MODEINFO); // na chwilę napis RADIO / KARTA SD
 #endif
 }
 
@@ -278,12 +281,9 @@ void Config::initSDPlaylist() {
     //  Mindig legyen indexelés az SD kártyán.
     sdman.indexSDPlaylist();
     if (SDPLFS()->exists(INDEX_SD_PATH)) {
-        File index = SDPLFS()->open(INDEX_SD_PATH, "r");
-        // if(doIndex){
+        sdAdoptBrowse(true); // na starcie folder odtwarzania = folder przeglądany
         lastStation(sdStartItem());
         sdResumePos = 0;
-        // }
-        index.close();
     }
 #endif // #ifdef USE_SD
 }
@@ -293,11 +293,68 @@ const char* Config::sdRootDir() {
     return sdman.exists(SD_SCAN_DIR) ? SD_SCAN_DIR : "/";
 }
 
-// Pierwszy plik folderu (albo losowy przy włączonym losowaniu); gdy w folderze są same podfoldery: 1
+// Pierwszy plik folderu odtwarzania (albo losowy przy włączonym losowaniu); gdy są tam same podfoldery: 0 (nic nie gra)
 uint16_t Config::sdStartItem() {
+    uint16_t len = sdPlayLength();
+    if (sdPlayFirst > len) { return 0; }
+    return store.sdsnuffle ? random(sdPlayFirst, len + 1) : sdPlayFirst;
+}
+
+uint16_t Config::sdPlayLength() {
+    uint16_t out = 0;
+    if (sdman.exists(INDEX_SDPLAY_PATH)) {
+        File index = sdman.open(INDEX_SDPLAY_PATH, "r");
+        out = index.size() / 4;
+        index.close();
+    }
+    return out;
+}
+
+static bool sdCopyFile(const char* from, const char* to) {
+    File src = sdman.open(from, "r");
+    if (!src) { return false; }
+    if (sdman.exists(to)) { sdman.remove(to); }
+    File dst = sdman.open(to, "w", true);
+    if (!dst) {
+        src.close();
+        return false;
+    }
+    uint8_t buf[512];
+    size_t  n;
+    while ((n = src.read(buf, sizeof(buf))) > 0) { dst.write(buf, n); }
+    dst.close();
+    src.close();
+    return true;
+}
+
+// Wybrano plik w folderze przeglądanym: ten folder staje się folderem odtwarzania (lista jest kopiowana)
+void Config::sdAdoptBrowse(bool force) {
+    if (!force && sdBrowsingPlayFolder() && sdman.exists(INDEX_SDPLAY_PATH)) { return; }
+    sdCopyFile(PLAYLIST_SD_PATH, PLAYLIST_SDPLAY_PATH);
+    sdCopyFile(INDEX_SD_PATH, INDEX_SDPLAY_PATH);
+    strlcpy(sdPlayDir, sdDir, sizeof(sdPlayDir));
+    sdPlayFirst = sdFirstFile;
+    sdResumePos = 0;
+    stopedSdStationId = -1;
+}
+
+// Otwarcie listy na ekranie: pokaż folder odtwarzania (lista jest kopiowana z powrotem)
+void Config::sdShowPlayFolder() {
+    if (sdBrowsingPlayFolder() || !sdman.exists(INDEX_SDPLAY_PATH)) { return; }
+    sdCopyFile(PLAYLIST_SDPLAY_PATH, PLAYLIST_SD_PATH);
+    sdCopyFile(INDEX_SDPLAY_PATH, INDEX_SD_PATH);
+    strlcpy(sdDir, sdPlayDir, sizeof(sdDir));
+    sdFirstFile = sdPlayFirst;
+    netserver.requestOnChange(PLAYLIST, 0);
+    netserver.requestOnChange(ITEM, 0);
+}
+
+// W folderze odtwarzania: grający plik. W innym folderze: pierwszy plik (albo pierwsza pozycja).
+uint16_t Config::sdCursorItem() {
+    if (sdBrowsingPlayFolder() && lastStation() > 0) { return lastStation(); }
     uint16_t len = playlistLength();
-    if (sdFirstFile > len) { return len > 0 ? 1 : 0; }
-    return store.sdsnuffle ? random(sdFirstFile, len + 1) : sdFirstFile;
+    if (len == 0) { return 0; }
+    return sdFirstFile <= len ? sdFirstFile : 1;
 }
 
 // Wybrano folder albo "..": wczytaj listę tego folderu zamiast odtwarzać
@@ -318,13 +375,11 @@ void Config::sdOpenFolder(uint16_t item) {
     if (l > 1 && tmpBuf2[l - 1] == '/') { tmpBuf2[l - 1] = '\0'; } // w liście folder ma "/" na końcu
     strlcpy(sdDir, tmpBuf2, sizeof(sdDir));
     sdman.indexSDPlaylist();
-    sdResumePos = 0;
-    sdNewFolder = player.isRunning();
-    lastStation(sdFirstFile <= playlistLength() ? sdFirstFile : 1);
-    if (!player.isRunning()) { loadStation(lastStation()); }
+    // Tylko przeglądanie: odtwarzanie (i folder odtwarzania) zostaje bez zmian
     netserver.requestOnChange(PLAYLIST, 0); // strona WWW wczytuje nową listę
     netserver.requestOnChange(ITEM, 0);
-    display.putRequest(NEWMODE, STATIONS); // na ekranie radia lista zostaje otwarta, kursor na pierwszym pliku
+    sdKeepBrowse = true;
+    display.putRequest(NEWMODE, STATIONS); // na ekranie radia lista zostaje otwarta w nowym folderze
 }
 #endif
 
@@ -414,9 +469,8 @@ void Config::initPlaylistMode() {
     if (getMode() == PM_SDCARD) {
         strlcpy(sdDir, sdRootDir(), sizeof(sdDir)); // po wejściu w kartę zawsze folder główny
         initSDPlaylist();
-        uint16_t cs = playlistLength();
-        _lastStation = store.lastSdStation;
-        if (_lastStation == 0 && cs > 0) { _lastStation = _randomStation(); }
+        _lastStation = store.lastSdStation; // pierwszy (albo losowy) plik; 0 = w folderze same podfoldery
+
     } else
 #endif
     {
@@ -856,28 +910,37 @@ static const char* _plFoldNext(const char* p, char* out) {
     return p + 1;
 }
 
-static bool _sameNameNoDiacritics(const char* a, const char* b) {
-    if (!a || !b) { return false; }
-    while (*a == ' ') { a++; }
-    while (*b == ' ') { b++; }
-    if (!*a || !*b) { return false; }
-    while (*a && *b) {
-        char ca, cb;
-        a = _plFoldNext(a, &ca);
-        b = _plFoldNext(b, &cb);
-        if (ca != cb) { return false; }
+// Zwraca liczbę bajtów na początku "text", które są nazwą "name" zapisaną bez ogonków (0 = nie pasuje).
+// Dopasowanie musi kończyć się na granicy słowa: "Radio PLONSK 93,6 FM" pasuje do "Radio Płońsk".
+static size_t _namePrefixNoDiacritics(const char* text, const char* name) {
+    if (!text || !name) { return 0; }
+    const char* t = text;
+    while (*t == ' ') { t++; }
+    while (*name == ' ') { name++; }
+    if (!*t || !*name) { return 0; }
+    while (*name) {
+        if (!*t) { return 0; }
+        char ct, cn;
+        t    = _plFoldNext(t, &ct);
+        name = _plFoldNext(name, &cn);
+        if (ct != cn) { return 0; }
     }
-    while (*a == ' ') { a++; }
-    while (*b == ' ') { b++; }
-    return *a == 0 && *b == 0;
+    if (isalnum((uint8_t)*t) || (uint8_t)*t >= 0x80) { return 0; }  // "PLONSKI" to nie "Płońsk"
+    return (size_t)(t - text);
 }
 
 void Config::setTitle(const char* title) {
     vuRefLevel = 0;
+    if (!title) { title = ""; }
     const char* plName = (config.station.name[0] == '.') ? config.station.name + 1 : config.station.name;
-    if (title != plName && _sameNameNoDiacritics(title, plName)) { title = plName; }
-    char titleBuf[BUFLEN];
-    strlcpy(titleBuf, title ? title : "", BUFLEN);  // title może wskazywać na config.station.title
+    char        titleBuf[BUFLEN];
+    size_t      n = (title == plName) ? 0 : _namePrefixNoDiacritics(title, plName);
+    if (n > 0) {
+        // nazwa z playlisty (z ogonkami) + reszta tytułu ze strumienia, np. " 93,6 FM"
+        snprintf(titleBuf, BUFLEN, "%s%s", plName, title + n);
+    } else {
+        strlcpy(titleBuf, title, BUFLEN);  // title może wskazywać na config.station.title
+    }
     memset(config.station.title, 0, BUFLEN);
     strlcpy(config.station.title, titleBuf, BUFLEN);
     u8fix(config.station.title);
@@ -888,7 +951,7 @@ void Config::setTitle(const char* title) {
 
 void Config::setStation(const char* station) {
     // Nazwa ze strumienia bez ogonków nie nadpisuje tej samej nazwy z playlisty
-    if (station != config.station.name && _sameNameNoDiacritics(station, config.station.name)) { return; }
+    if (station != config.station.name && _namePrefixNoDiacritics(station, config.station.name) > 0) { return; }
     memset(config.station.name, 0, BUFLEN);
     strlcpy(config.station.name, station, BUFLEN);
     u8fix(config.station.title);
@@ -1004,6 +1067,17 @@ uint16_t Config::playlistLength() {
 bool Config::loadStation(uint16_t ls) {
     int      sOvol;
     uint16_t cs = playlistLength();
+    const char* plPath = REAL_PLAYL;
+    const char* ixPath = REAL_INDEX;
+#ifdef USE_SD
+    // Karta: odtwarzanie zawsze z listy folderu odtwarzania, tylko pliki (bez ".." i podfolderów)
+    if (getMode() == PM_SDCARD) {
+        cs = sdPlayLength();
+        plPath = PLAYLIST_SDPLAY_PATH;
+        ixPath = INDEX_SDPLAY_PATH;
+        if (ls < sdPlayFirst || ls > cs) { cs = 0; }
+    }
+#endif
     if (cs == 0) {
         memset(station.url, 0, BUFLEN);
         memset(station.name, 0, BUFLEN);
@@ -1011,9 +1085,9 @@ bool Config::loadStation(uint16_t ls) {
         station.ovol = 0;
         return false;
     }
-    if (ls > playlistLength()) { ls = 1; }
-    File playlist = SDPLFS()->open(REAL_PLAYL, "r");
-    File index = SDPLFS()->open(REAL_INDEX, "r");
+    if (ls > cs || ls == 0) { ls = 1; }
+    File playlist = SDPLFS()->open(plPath, "r");
+    File index = SDPLFS()->open(ixPath, "r");
     index.seek((ls - 1) * 4, SeekSet);
     uint32_t pos;
     index.readBytes((char*)&pos, 4);

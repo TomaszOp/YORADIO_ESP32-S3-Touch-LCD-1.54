@@ -201,6 +201,10 @@ void Display::_buildPager() {
     if (_volip) { _footer->addWidget(_volip); }
     if (_rssi) { _footer->addWidget(_rssi); }
     if (_heapbar) { _footer->addWidget(_heapbar); }
+    #if defined(MODEICON_ENABLED) && defined(USE_SD)
+    _modeicon = new ModeIconWidget(modeIconConf, config.theme.rssi, config.theme.background);
+    _footer->addWidget(_modeicon);
+    #endif
     if (_chtxt) {
         _footer->addWidget(_chtxt); // Az aktuális csatorna számának widgetét hozzáadja a footerhez.
     }
@@ -321,6 +325,9 @@ void Display::_swichMode(displayMode_e newmode) {
     _mode = newmode;
     dsp.setScrollId(NULL);
     if (newmode == PLAYER) {
+#ifdef USE_SD
+        config.sdKeepBrowse = false; // następne otwarcie listy z ekranu radia pokaże folder odtwarzania
+#endif
         if (player.isRunning()) {
             if (clockMove.width < 0) {
                 _clock->moveBack();
@@ -376,6 +383,13 @@ void Display::_swichMode(displayMode_e newmode) {
          config.doSleepW();
     }
     if (newmode == SDCHANGE) { _showDialog(LANG::const_waitForSD); }
+    #ifdef USE_SD
+    if (newmode == MODEINFO) {
+        _showDialog(config.getMode() == PM_SDCARD ? "KARTA SD" : "RADIO");
+        _nums->setText("");
+        timekeeper.waitAndReturnPlayer(2);
+    }
+    #endif
     if (newmode == INFO || newmode == SETTINGS || newmode == TIMEZONE || newmode == WIFI) { _showDialog(LANG::const_DlgNextion); }
     if (newmode == NUMBERS) { _showDialog(""); }
     #if DSP_MODEL == DSP_ILI9488
@@ -388,6 +402,14 @@ void Display::_swichMode(displayMode_e newmode) {
         _pager->setPage(pages[PG_PLAYLIST]);
         _plcurrent->setText("");
         currentPlItem = config.lastStation();
+#ifdef USE_SD
+        if (config.getMode() == PM_SDCARD) {
+            // Otwarcie listy: folder odtwarzania z kursorem na grającym pliku. Po zmianie folderu: zostaje nowy folder.
+            if (!config.sdKeepBrowse) { config.sdShowPlayFolder(); }
+            config.sdKeepBrowse = false;
+            currentPlItem = config.sdCursorItem();
+        }
+#endif
         _plwidget->reload();
         _drawPlaylist();
     }
@@ -475,7 +497,7 @@ void Display::loop() {
         if (pm_result) {
             switch (request.type) {
                 case NEWMODE: _swichMode((displayMode_e)request.payload); break;
-                case CLOSEPLAYLIST: player.sendCommand({PR_PLAY, request.payload}); break;
+                case CLOSEPLAYLIST: player.sendCommand({PR_SELECT, request.payload}); break;
                 case CLOCK:
                     if (_mode == PLAYER || _mode == SCREENSAVER) { _time(request.payload == 1); }
                     /*#ifdef USE_NEXTION
@@ -575,6 +597,7 @@ void Display::loop() {
         }
     }
 
+    if (_modeicon) { _modeicon->setMode(config.getMode()); } // rysuje tylko przy zmianie trybu
     dsp.loop();
     /*
     #if I2S_DOUT==255
